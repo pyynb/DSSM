@@ -29,7 +29,7 @@ def parse_opt():
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--batch_size', type=int, default=2048)
     parser.add_argument('--shuffle', type=bool, default=True)
-    parser.add_argument('--dropout', type=float, default=0.0)
+    parser.add_argument('--dropout', type=float, default=0.4)
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--optimizer', type=str, default='Adam')
     parser.add_argument('--device', type=str, default='gpu')
@@ -77,10 +77,14 @@ def negative_sampling(data, sampling_cnt):
 
 
 def load_data():
+    print("start to load data")
+    print("-"*40)
     x_val, y_val = None, None
     if opt.whether_train == 'train':
         x = pickle.load(open(os.path.join(opt.data_path, 'x_train.p'), 'rb'))
+        print(x)
         y = pickle.load(open(os.path.join(opt.data_path, 'y_train.p'), 'rb'))
+        print(y)
         x_val = pickle.load(open(os.path.join(opt.data_path, 'x_val.p'), 'rb'))
         y_val = pickle.load(open(os.path.join(opt.data_path, 'y_val.p'), 'rb'))
     else:
@@ -96,7 +100,8 @@ def load_data():
     x = format_data(x)
     if x_val is not None:
         x_val = format_data(x_val)
-
+    print("end loading data")
+    print("-"*40)
     return x, y, x_val, y_val
 
 
@@ -109,6 +114,8 @@ def format_data(data):
 
 
 def train(x, y, x_val=None, y_val=None):
+    print("start to train")
+    print("-"*40)
     emb_size= 8
     col_params = {}
     for key in user_cols:
@@ -121,6 +128,7 @@ def train(x, y, x_val=None, y_val=None):
             'belongs': 'item',
             'emb_size': emb_size
         }
+    print(col_params)
     # 如果有vector的话，example
     # col_params['fine_vec'] = {
     #     'belongs': 'item',
@@ -130,12 +138,15 @@ def train(x, y, x_val=None, y_val=None):
     trainable = DSSMTrainable(x, y, col_params, batch_size=opt.batch_size, shuffle=opt.shuffle,
                               label_encoder_rate_min=opt.encode_min, user_dnn_size=(128, 64, 32),
                               item_dnn_size=(128, 64, 32),
-                              dropout=opt.dropout, activation='LeakyReLU', use_senet=opt.use_senet,
+                              dropout=opt.dropout, activation='relu', use_senet=opt.use_senet,
                               val_x=x_val, val_y=y_val)
+    print("trainable")
+    print(trainable)
     trainable.train(epochs=opt.epochs, val_step=1, device=device, optimizer='Adam', lr=opt.lr,
                           model_path=opt.model_path)
     trainable.save_model(model_path=opt.model_path)
-
+    auc = trainable.test(device)
+    print('Test Auc is {}'.format(auc))
 
 def test(x, y, model_path):
     trainable = DSSMTrainable(x, y, batch_size=opt.batch_size, model_path=model_path)
@@ -150,7 +161,16 @@ def main():
     else:
         test(x, y, opt.model_path)
 
-
+# epoch:0, train loss:0.47347, train auc:0.66204, val loss:0.91949, val auc:0.69394
+# epoch:1, train loss:0.46891, train auc:0.67491, val loss:0.95697, val auc:0.70494
+# epoch:2, train loss:0.4624, train auc:0.69332, val loss:0.93861, val auc:0.72156
+# epoch:3, train loss:0.45306, train auc:0.71391, val loss:0.90085, val auc:0.71722
+# epoch:4, train loss:0.44524, train auc:0.73066, val loss:0.89729, val auc:0.72551
+# epoch:5, train loss:0.4389, train auc:0.74261, val loss:0.90899, val auc:0.73206
+# epoch:6, train loss:0.43394, train auc:0.7519, val loss:0.87402, val auc:0.72635
+# epoch:7, train loss:0.42883, train auc:0.76021, val loss:0.86835, val auc:0.73823
+# epoch:8, train loss:0.4243, train auc:0.7678, val loss:0.85601, val auc:0.7372
+# epoch:9, train loss:0.42125, train auc:0.77376, val loss:0.88253, val auc:0.74855
 if __name__ == '__main__':
     opt = parse_opt()
     device = torch.device('cpu')

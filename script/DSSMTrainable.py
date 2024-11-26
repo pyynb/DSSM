@@ -11,7 +11,7 @@ from sklearn.metrics import roc_auc_score
 from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-
+import json
 from dataloader.DSSMDataSet import DSSMDataSet
 from model.DSSM import DSSM
 from utils.utils import get_optimizer
@@ -20,13 +20,84 @@ from utils.utils import get_optimizer
 class DSSMTrainable:
     def __init__(self, x, y, cols_params=None, batch_size=2048, shuffle=True, val_x=None, val_y=None,
                  label_encoder_rate_min=0.0001, user_dnn_size=(64, 32), item_dnn_size=(64, 32), dropout=0.2,
-                 activation='LeakyReLU', model_path=None, use_senet=False, device='cpu'):
+                 activation='relu', model_path=None, use_senet=False, device='cpu',train = True):
 
         self.use_senet = use_senet
         self.best_weight = None
+        if train:
+            if model_path is not None:
+                # test or eval class
+                self.model = torch.load(os.path.join(model_path, 'best_train_model.pt'),
+                                        map_location=torch.device(device))
+                # file = open(os.path.join(model_path, 'datatype.pkl'), 'rb')
+                # self.datatype = pickle.load(file)
+                self.test_dataset = DSSMDataSet(x, np.array(y).reshape(-1, 1), datatype=self.datatypes,
+                                            label_encoder_rate_min=label_encoder_rate_min)
+                self.test_dataloader = DataLoader(self.test_dataset, batch_size=batch_size, shuffle=shuffle)
 
-        if model_path is not None:
-            # test or eval class
+                self.datatypes = self.model.user_datatypes + self.model.item_datatypes
+                self.trainable = True
+                # file = open(os.path.join('/home/fufan/', 'datatype.pkl'), 'rb')
+                # self.datatype = pickle.load(file)
+                # train class
+                self.train_dataset = DSSMDataSet(x, np.array(y).reshape(-1, 1), cols_params,
+                                                label_encoder_rate_min=label_encoder_rate_min,
+                                                neg_sampling=0, training=True)
+                self.train_dataloader = DataLoader(self.train_dataset, batch_size=batch_size, shuffle=True)
+                print('Finish train dataloader, len is {}'.format(len(self.train_dataset)))
+                self.datatypes = self.train_dataset.datatypes
+                if val_x is not None and val_y is not None:
+                    self.val_dataset = DSSMDataSet(val_x, np.array(val_y).reshape(-1, 1), datatype=self.datatypes)
+                    self.val_dataloader = DataLoader(self.val_dataset, batch_size=batch_size)
+                else:
+                    self.val_dataloader = None
+                    self.datatypes = self.train_dataset.datatypes
+
+                user_datatypes = []
+                item_datatypes = []
+                for datatype in self.datatypes:
+                    if datatype['belongs'] == 'user':
+                        user_datatypes.append(datatype)
+                    else:
+                        item_datatypes.append(datatype)
+            else:
+                self.trainable = True
+                # file = open(os.path.join('/home/fufan/', 'datatype.pkl'), 'rb')
+                # self.datatype = pickle.load(file)
+                # train class
+                self.train_dataset = DSSMDataSet(x, np.array(y).reshape(-1, 1), cols_params,
+                                                label_encoder_rate_min=label_encoder_rate_min,
+                                                neg_sampling=0, training=True)
+                self.train_dataloader = DataLoader(self.train_dataset, batch_size=batch_size, shuffle=True)
+                print('Finish train dataloader, len is {}'.format(len(self.train_dataset)))
+                self.datatypes = self.train_dataset.datatypes
+                self.test_dataset = DSSMDataSet(x, np.array(y).reshape(-1, 1), datatype=self.datatypes,
+                                            label_encoder_rate_min=label_encoder_rate_min)
+                self.test_dataloader = DataLoader(self.test_dataset, batch_size=batch_size, shuffle=shuffle)
+
+                if val_x is not None and val_y is not None:
+                    self.val_dataset = DSSMDataSet(val_x, np.array(val_y).reshape(-1, 1), datatype=self.datatypes)
+                    self.val_dataloader = DataLoader(self.val_dataset, batch_size=batch_size)
+                else:
+                    self.val_dataloader = None
+                    self.datatypes = self.train_dataset.datatypes
+
+                user_datatypes = []
+                item_datatypes = []
+                for datatype in self.datatypes:
+                    if datatype['belongs'] == 'user':
+                        user_datatypes.append(datatype)
+                    else:
+                        item_datatypes.append(datatype)
+                # if model_path:
+                # self.model = torch.load(os.path.join('/home/fufan/', 'model.pt'))
+
+                # else:
+                self.model = DSSM(user_datatypes, item_datatypes, user_dnn_size=user_dnn_size, item_dnn_size=item_dnn_size,
+                                dropout=dropout, activation=activation, use_senet=self.use_senet)
+                # # torch.save(self.model, os.path.join('/home/fufan/', 'model.pt'))
+                # self.save_model('/home/fufan/')
+        else:
             self.model = torch.load(os.path.join(model_path, 'best_train_model.pt'),
                                     map_location=torch.device(device))
             # file = open(os.path.join(model_path, 'datatype.pkl'), 'rb')
@@ -36,40 +107,6 @@ class DSSMTrainable:
                                             label_encoder_rate_min=label_encoder_rate_min)
             self.test_dataloader = DataLoader(self.test_dataset, batch_size=batch_size, shuffle=shuffle)
             self.trainable = False
-        else:
-            self.trainable = True
-            # file = open(os.path.join('/home/fufan/', 'datatype.pkl'), 'rb')
-            # self.datatype = pickle.load(file)
-            # train class
-            self.train_dataset = DSSMDataSet(x, np.array(y).reshape(-1, 1), cols_params,
-                                             label_encoder_rate_min=label_encoder_rate_min,
-                                             neg_sampling=neg_sampling, training=True)
-            self.train_dataloader = DataLoader(self.train_dataset, batch_size=batch_size, shuffle=True)
-            print('Finish train dataloader, len is {}'.format(len(self.train_dataset)))
-            self.datatypes = self.train_dataset.datatypes
-            if val_x is not None and val_y is not None:
-                self.val_dataset = DSSMDataSet(val_x, np.array(val_y).reshape(-1, 1), datatype=self.datatypes)
-                self.val_dataloader = DataLoader(self.val_dataset, batch_size=batch_size)
-            else:
-                self.val_dataloader = None
-                self.datatypes = self.train_dataset.datatypes
-
-            user_datatypes = []
-            item_datatypes = []
-            for datatype in self.datatypes:
-                if datatype['belongs'] == 'user':
-                    user_datatypes.append(datatype)
-                else:
-                    item_datatypes.append(datatype)
-            # if model_path:
-            # self.model = torch.load(os.path.join('/home/fufan/', 'model.pt'))
-
-            # else:
-            self.model = DSSM(user_datatypes, item_datatypes, user_dnn_size=user_dnn_size, item_dnn_size=item_dnn_size,
-                              dropout=dropout, activation=activation, use_senet=self.use_senet)
-            # # torch.save(self.model, os.path.join('/home/fufan/', 'model.pt'))
-            # self.save_model('/home/fufan/')
-
         print(self.model)
         # model = self.model.to(device)
 
@@ -78,7 +115,7 @@ class DSSMTrainable:
             group['lr'] = group['lr'] * decay_factor
 
     def train(self, epochs=10, val_step=1, device='cpu', optimizer='Adam', lr=1e-5, model_path=None,
-              lr_decay_rate=0, lr_decay_step=0):
+              lr_decay_rate=0, lr_decay_step=0,user_embedding_path="checkpoint/user_embeddings.json"):
         # writer = SummaryWriter()
         optimizer = get_optimizer(optimizer, self.model.parameters(), lr)
         loss_func = nn.BCELoss()
@@ -87,6 +124,9 @@ class DSSMTrainable:
         best_val_auc, best_val_epoch = 0, 0
         train_auc = 0
         best_train_auc = 0
+
+        user_embeddings = {}
+        user_best_embeddings = {}
         for epoch in range(epochs):
             self.model.train()
 
@@ -102,8 +142,9 @@ class DSSMTrainable:
             progress_bar = tqdm(self.train_dataloader, desc='|Train Epoch {}'.format(epoch), leave=False)
             for index, data in enumerate(progress_bar):
             # for index, data in enumerate(self.train_dataloader):
-                user_x, item_x, y = data
-                user_x, item_x, y = user_x.to(device).float(), item_x.to(device).float(), y.to(device).float()
+                user_x_int, item_x_int, y = data
+                user_x, item_x, y = user_x_int.to(device).float(), item_x_int.to(device).float(), y.to(device).float()
+
                 user_emb, item_emb = self.model(user_x, item_x)
 
                 y_pre = torch.sigmoid((user_emb * item_emb).sum(dim=-1)).reshape(-1, 1)
@@ -121,8 +162,22 @@ class DSSMTrainable:
                 total_len += len(y_pre)
                 progress_bar.set_postfix({'loss': loss.item()}, refresh=True)
 
+                user_ids = user_x_int[:, 0]
+                user_ids = user_ids.cpu().detach().numpy()
+                user_ids = [int(uid) for uid in user_ids]
+                user_emb_values = user_emb.cpu().detach().numpy().tolist()
+                for i in range(0,len(user_emb_values)):
+                    user_emb_values[i] = '\002'.join([str(x) for x in user_emb_values[i]])
+                for i in range(0,len(user_ids)):
+                    if(user_ids[i] not in user_embeddings):
+                        user_embeddings[user_ids[i]] = [user_emb_values[i]]
+                    else:
+                        user_embeddings[user_ids[i]].append(user_emb_values[i])
+
             train_loss, train_auc = self.eval(self.train_dataloader, device, loss_func)
             if train_auc > best_train_auc:
+                if not os.path.exists(model_path):
+                    os.makedirs(model_path)
                 torch.save(self.model, os.path.join(model_path, 'best_train_model.pt'))
                 best_train_auc = train_auc
                 self.best_weight = self.model.state_dict()
@@ -130,8 +185,12 @@ class DSSMTrainable:
                 val_loss, val_auc = self.eval(self.val_dataloader, device, loss_func=loss_func)
                 # val_loss, val_auc = eval_DSSM(model, val_dataloader, loss_func, device)
                 if val_auc > best_val_auc and model_path is not None:
+                    with open(user_embedding_path, "w") as f:
+                        for u in user_embeddings:
+                            f.writelines(str(u) + '\t' + '\001'.join(user_embeddings[u]) + '\n')
                     best_val_auc = val_auc
                     torch.save(self.model, os.path.join(model_path, 'best_model.pt'))
+                user_embeddings = {}
                 print("epoch:{}, train loss:{:.5}, train auc:{:.5}, val loss:{:.5}, val auc:{:.5}".format(epoch,
                                                                                                           train_loss,
                                                                                                           train_auc,
@@ -141,6 +200,10 @@ class DSSMTrainable:
                 print("epoch:{}, train loss:{:.5}, train auc:{:.5}".format(epoch, train_loss, train_auc))
 
         return train_auc
+
+
+
+
 
     def eval(self, dataloader, device='cpu', loss_func=None):
         self.model.eval()

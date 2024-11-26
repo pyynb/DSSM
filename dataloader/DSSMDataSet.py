@@ -26,7 +26,7 @@ class DSSMDataSet(Dataset):
         # format数据
         print('Start to format data! Please wait a moment! It will be taken a long time!')
 
-        self.y = y.astype(np.float)
+        self.y = y.astype(np.float64)
 
         if training and neg_sampling > 0:
             data = self.negative_sampling(data, neg_sampling)
